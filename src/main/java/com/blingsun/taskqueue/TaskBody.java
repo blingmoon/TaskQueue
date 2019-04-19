@@ -7,7 +7,7 @@ package com.blingsun.taskqueue;
  * @version 2018/9/30 14:32
  * @since 2018/9/30 14:32
  **/
-public interface TaskBody {
+public interface TaskBody  {
 
     /**
      * 本身不支持传参，需要传入参数的话

@@ -220,6 +220,11 @@ public abstract class AbstractTaskQueue extends Thread {
     }
 
 
+    /**
+     *
+     * @param key 任务的key值,这个请保持唯一
+     * @return 返回的是以毫秒为单位的, 1000 ms = 1s
+     */
     public long getRestTime(Object key){
         Task  task=taskPool.get(key);
 
@@ -234,7 +239,7 @@ public abstract class AbstractTaskQueue extends Thread {
         long restTime ;
         indexLock.lock();
         try {
-             restTime = cycleTime*task.cycleNum+(task.index+this.slots.length-this.currentIndex.get())%cycleTime;
+             restTime = cycleTime*(task.cycleNum)+((task.index+this.slots.length-this.currentIndex.get())%this.slots.length)*minStep;
         }finally {
             indexLock.unlock();
 

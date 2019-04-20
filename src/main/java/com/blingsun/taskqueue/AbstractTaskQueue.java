@@ -29,7 +29,7 @@ public abstract class AbstractTaskQueue extends Thread {
     /**
      * 记录当前的时间,任务队列中使用,配合minStep来判断下一个执行时间
      */
-    private long currentTime;
+    private volatile long currentTime;
 
     /**
      * 任务池,放在这边主要的目的是为了除移操作
@@ -44,16 +44,19 @@ public abstract class AbstractTaskQueue extends Thread {
      * eg: (3600 , 1 , SECONDS)这三个参数就表示slot的长度是3600,没过1s检查一次任务队列
      */
     public AbstractTaskQueue(Integer slotsLength,Integer timeAccuracy,TimeUnit timeUnit){
-        this.currentTime = System.currentTimeMillis();
+
         this.slots=new Slot[slotsLength];
         this.minStep=timeUnit.toMillis(timeAccuracy);
     }
 
 
     /**
-     * 这个是开始的时候加载动作,如果持久化了的话,在启动的时候需要去实现这个函数
+     * 这个是开始的时候加载动作,
+     * 如果持久化了的话,在启动的时候需要去重写这个函数
      */
-    public abstract void loadHistory();
+    public  void loadHistory(){
+
+    }
 
     /**
      * 用来实现持久化任务,重写这个方法可以进行持久化的方式选择
@@ -63,14 +66,18 @@ public abstract class AbstractTaskQueue extends Thread {
      * @param timeUnit 定时的时间单位
      * @return 是否成功持久化，成功为TRUE,失败返回False
      */
-     protected abstract Boolean persistenceTask(Object taskId,TaskBody taskBody,Long time,TimeUnit timeUnit);
+     protected  Boolean persistenceTask(Object taskId,TaskBody taskBody,Long time,TimeUnit timeUnit){
+         return true;
+     }
 
     /**
      * 用来实现删除持久化任务,在remove使用到
      * @param taskId 任务的id
      * @return 是否成功删除，成功为TRUE,失败返回False
      */
-    protected abstract Boolean deleteTask(Object taskId);
+    protected  Boolean deleteTask(Object taskId){
+        return true;
+    }
 
     /**
      * 自己定义任务的执行过程,可以是同步，异步,也可以是线程池执行,取决于自身的实现
@@ -124,7 +131,7 @@ public abstract class AbstractTaskQueue extends Thread {
         }
 
         if(logger.isDebugEnabled()){
-            logger.debug("任务{}已经被添加到延迟队列,任务将在{}s后触发",taskId,time);
+            logger.debug("任务{}已经被添加到延迟队列,任务将在{}s后触发,触发时间为{}",taskId,time,new Date(System.currentTimeMillis()+TimeUnit.SECONDS.toMillis(time)));
         }
 
     }
@@ -160,7 +167,9 @@ public abstract class AbstractTaskQueue extends Thread {
      */
     @Override
     public  void run() {
+
         while (true) {
+            currentTime = System.currentTimeMillis();
             indexLock.lock();
             try {
                 //1.检查当前的slots[currentIndex]
@@ -197,8 +206,7 @@ public abstract class AbstractTaskQueue extends Thread {
             //线程休息时间
             //这一段主要是为了防止上面执行的时间过长导致定时出现偏差，从而进行修复的操作
             long nowTime = System.currentTimeMillis();
-            long nextTime = currentTime + minStep - nowTime >0? currentTime + minStep - nowTime:0;
-            currentTime = nowTime;
+            long nextTime =currentTime + minStep - nowTime >0? currentTime + minStep - nowTime:0;
             if(nextTime!=0){
                 try {
                     Thread.sleep(nextTime);
@@ -223,7 +231,7 @@ public abstract class AbstractTaskQueue extends Thread {
         }
 
         long cycleTime=this.slots.length*this.minStep;
-        long restTime = 0;
+        long restTime ;
         indexLock.lock();
         try {
              restTime = cycleTime*task.cycleNum+(task.index+this.slots.length-this.currentIndex.get())%cycleTime;

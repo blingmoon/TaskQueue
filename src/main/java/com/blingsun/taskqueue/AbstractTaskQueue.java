@@ -1,10 +1,8 @@
 package com.blingsun.taskqueue;
 
-import org.apache.commons.beanutils.BeanUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -26,15 +24,16 @@ public abstract class AbstractTaskQueue extends Thread {
     private final  Slot[] slots;
     private final long minStep;
 
+
     /**
      * 记录当前的时间,任务队列中使用,配合minStep来判断下一个执行时间
      */
-    private volatile long currentTime;
+    private long currentTime;
 
     /**
      * 任务池,放在这边主要的目的是为了除移操作
      */
-    private Map<Object,Task> taskPool=new ConcurrentHashMap<>(16);
+    protected Map<Object,Task> taskPool=new ConcurrentHashMap<>(16);
 
     /**
      * TaskQueue构造函数
@@ -50,34 +49,7 @@ public abstract class AbstractTaskQueue extends Thread {
     }
 
 
-    /**
-     * 这个是开始的时候加载动作,
-     * 如果持久化了的话,在启动的时候需要去重写这个函数
-     */
-    public  void loadHistory(){
 
-    }
-
-    /**
-     * 用来实现持久化任务,重写这个方法可以进行持久化的方式选择
-     * @param taskId 任务的id
-     * @param taskBody 任务的执行题
-     * @param time 定时的时间
-     * @param timeUnit 定时的时间单位
-     * @return 是否成功持久化，成功为TRUE,失败返回False
-     */
-     protected  Boolean persistenceTask(Object taskId,TaskBody taskBody,Long time,TimeUnit timeUnit){
-         return true;
-     }
-
-    /**
-     * 用来实现删除持久化任务,在remove使用到
-     * @param taskId 任务的id
-     * @return 是否成功删除，成功为TRUE,失败返回False
-     */
-    protected  Boolean deleteTask(Object taskId){
-        return true;
-    }
 
     /**
      * 自己定义任务的执行过程,可以是同步，异步,也可以是线程池执行,取决于自身的实现
@@ -100,19 +72,12 @@ public abstract class AbstractTaskQueue extends Thread {
      * @param timeUnit 时间单位
      */
     public  void registerTask(Object taskId,TaskBody taskBody,Long time,TimeUnit timeUnit){
-
         //1.计算添加的slots的位置
         Integer steps = (int) (timeUnit.toMillis(time)/minStep);
         //2.计算周期数
         Integer cycleNum=steps/slots.length;
 
-        //持久化任务选择
-        if(!persistenceTask(taskId,taskBody,time,timeUnit)){
-            //没有成功持久化
-            if(logger.isDebugEnabled()){
-                logger.debug("任务 taskId {},taskBody {},没有成功持久化",taskId,taskBody);
-            }
-        }
+
 
         indexLock.lock();
         //这个会和run进行竞争,主要是为了维持currentIndex的线程安全
@@ -142,14 +107,8 @@ public abstract class AbstractTaskQueue extends Thread {
      */
     public void removeTask(Object key){
         Task task = taskPool.remove(key);
-        if(task == null){
-            return;
-        }
-        //删除任务持久化任务
-        if(deleteTask(key)&&logger.isDebugEnabled()){
-            logger.debug("任务{}已经被除移",key);
-        }
     }
+
 
     /**
      * 用来响应暂停中断
@@ -167,7 +126,6 @@ public abstract class AbstractTaskQueue extends Thread {
      */
     @Override
     public  void run() {
-
         while (true) {
             currentTime = System.currentTimeMillis();
             indexLock.lock();
@@ -190,7 +148,7 @@ public abstract class AbstractTaskQueue extends Thread {
                             //checkTask的逻辑先将循环自减
                             //<0返回true, >=0返回false
                             if (temp.checkTask()) {
-                                taskPool.remove(key);
+                                this.removeTask(key);
                                 iterator.remove();
                                 excuteTask(temp.taskBody);
                             }
@@ -281,16 +239,9 @@ public abstract class AbstractTaskQueue extends Thread {
          * 两者顺序不可以颠倒会出现-1的情况当定时任务正好为一个周期情况回收-1执行
          */
         Boolean checkTask(){
-            --cycleNum;
-            return  cycleNum<0;
+            return  --cycleNum<0;
         }
 
-        /**
-         * 执行任务体
-         */
-        void excuteTask(){
-            taskBody.execute();
-        }
 
         @Override
         public String toString() {

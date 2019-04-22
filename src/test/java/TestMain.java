@@ -5,11 +5,9 @@ import com.blingsun.taskqueue.taskpresist.AofTask;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
+import java.io.*;
 import java.util.ArrayList;
+import java.util.Properties;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -117,6 +115,7 @@ public class TestMain {
         TaskQueueAOF taskQueueAOF = new TaskQueueAOF("testTwo",threadPoolExecutor);
         taskQueueAOF.start();
 
-        System.out.println("----end---");
+        //System.out.println(Long.valueOf(null));
+
     }
 }

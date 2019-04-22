@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.net.URL;
 import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -18,10 +19,73 @@ import java.util.concurrent.TimeUnit;
  */
 public class TaskQueueAOF extends TaskQueueByThreadPool {
 
-    static private final Logger logger = LoggerFactory.getLogger(TaskQueueAOF.class);
-
+    private static final Logger logger = LoggerFactory.getLogger(TaskQueueAOF.class);
+    private static final String CONFIG_NAME = "taskqueueconfig.properties";
+    /**
+     * FILE_LOCK主要是为了同步配置文件,多个实例共享,现在暂时控制的是taskqueueconfig.properties访问
+     */
+    private static final Object FILE_LOCK = new Object();
     private final String queueAofKey;
+    private Long vesion=null;
     private ObjectOutputStream os;
+
+    /**
+     * 加载version文件
+     */
+    private static Properties propertiesLoad(){
+        Properties properties = new Properties();
+
+        synchronized (FILE_LOCK){
+            File file =new File("config"+File.separator+CONFIG_NAME);
+            InputStream in = null;
+            try {
+                if(!file.exists() && !file.createNewFile()){
+                    logger.debug("文件{}不存在,同时也创建失败",file.getName());
+                    return properties;
+                }
+                in= new BufferedInputStream(new FileInputStream(file));
+                properties.load(in);
+            } catch (IOException e) {
+                if(logger.isDebugEnabled()){
+                    logger.debug("taskqueueconfig.properties load failed",e);
+                }
+            }finally {
+                try {
+                    if(in!=null){
+                        in.close();
+                    }
+                } catch (IOException e) {
+                    if(logger.isDebugEnabled()){
+                        logger.debug("taskqueueconfig.properties file close failed",e);
+                    }
+                }
+            }
+        }
+        return properties;
+    }
+
+    private  void refreshConfig(Map<String,String> update){
+        synchronized (FILE_LOCK){
+            //加载原文件,应为有这个FILE_LOCK的关系，相当于事务的控制了
+            Properties properties = propertiesLoad();
+            for (String key:update.keySet()){
+                properties.setProperty(key,update.get(key));
+            }
+            //写回配置文件
+            OutputStreamWriter outputStreamWriter ;
+            try {
+                File file = new File("config"+File.separator+CONFIG_NAME);
+                if(!file.exists() && !file.createNewFile()){
+                    logger.debug("文件{}不存在,并且创建失败了,请查看原因",file.getName());
+                }
+                outputStreamWriter = new OutputStreamWriter(new FileOutputStream(file,false));
+                properties.store(outputStreamWriter,""+System.currentTimeMillis());
+            } catch (IOException e) {
+                logger.debug("文件操作异常",e);
+            }
+        }
+    }
+
 
     public TaskQueueAOF(String queueAofKey,Executor executor, Integer slotsLength, Integer timeAccuracy, TimeUnit timeUnit) {
         super(executor, slotsLength, timeAccuracy, timeUnit);
@@ -40,7 +104,7 @@ public class TaskQueueAOF extends TaskQueueByThreadPool {
      */
     private  void loadHistory(){
         //加载历史文件
-        File file = new File("aof"+File.separator+this.queueAofKey+".bat");
+        File file = new File("aof"+File.separator+this.queueAofKey+this.loadVersion()+".bat");
         LinkedList<AofTask> list = new LinkedList<>();
         if (file.exists()){
             ObjectInputStream ois =null;
@@ -81,7 +145,7 @@ public class TaskQueueAOF extends TaskQueueByThreadPool {
                 if(!this.taskPool.containsKey(aofTask.getTaskKey())){
                     //任务没有被添加,添加任务,这个添加动作不要去走持久化路线,因为这个任务已经被持久化了,所以调用的是父辈的注册，而不是子类的注册
                     //获得剩余时间,当前时间是不是达到的
-                    long rest = (aofTask.getCurrentTime()+aofTask.getRestTime() >currentTime)?currentTime+aofTask.getRestTime()-aofTask.getCurrentTime():0;
+                    long rest = (aofTask.getCurrentTime()+aofTask.getRestTime() >currentTime)?aofTask.getCurrentTime()+aofTask.getRestTime()-currentTime:0;
                     super.registerTask(aofTask.getTaskKey(),aofTask.getTaskBody(),rest,TimeUnit.MILLISECONDS);
                 }
             }else {
@@ -145,12 +209,31 @@ public class TaskQueueAOF extends TaskQueueByThreadPool {
         return  result;
     }
 
+    private Long loadVersion(){
+        Properties properties = propertiesLoad();
+        if(properties.containsKey(this.queueAofKey) && properties.getProperty(this.queueAofKey)!=null){
+            vesion = Long.parseLong(properties.getProperty(this.queueAofKey));
+        }else {
+            vesion = System.currentTimeMillis();
+            HashMap<String,String> hashMap = new HashMap<>(1);
+            hashMap.put(queueAofKey,vesion.toString());
+            refreshConfig(hashMap);
+        }
+        return vesion;
+    }
+
     private ObjectOutputStream getObjectOutStream() throws IOException {
         if(os != null) {
             return os;
         }
 
-        File file = new File("aof"+File.separator+this.queueAofKey+".bat");
+        if(vesion == null){
+            if(loadVersion() == null){
+                logger.debug("加载任务队列{}的aof版本好出错",this.queueAofKey);
+            }
+        }
+
+        File file = new File("aof"+File.separator+this.queueAofKey+vesion+".bat");
         if(file.exists()){
             //文件存在
             FileOutputStream fo = new FileOutputStream(file,true);

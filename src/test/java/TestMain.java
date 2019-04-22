@@ -18,7 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class TestMain {
 
     static private Logger logger = LoggerFactory.getLogger(TestMain.class);
-
+    static private ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
+            5,400,60, TimeUnit.SECONDS,new LinkedBlockingDeque<Runnable>());
     private static void test(Runnable runnable){
         System.out.println(runnable.getClass());
     }
@@ -27,9 +28,6 @@ public class TestMain {
      * 常规的测试
      */
     private static void testOnce(){
-
-        ThreadPoolExecutor threadPoolExecutor = new ThreadPoolExecutor(
-                5,400,60, TimeUnit.SECONDS,new LinkedBlockingDeque<Runnable>());
         TaskQueueByThreadPool taskQueueByThreadPool = new TaskQueueByThreadPool(threadPoolExecutor);
         taskQueueByThreadPool.start();
         AtomicInteger count = new AtomicInteger(1);
@@ -112,6 +110,13 @@ public class TestMain {
 
     }
     public static void main(String[] agr){
-        testTwoRead();
+
+        //testTwoWrite();
+        //testTwoRead();
+
+        TaskQueueAOF taskQueueAOF = new TaskQueueAOF("testTwo",threadPoolExecutor);
+        taskQueueAOF.start();
+
+        System.out.println("----end---");
     }
 }

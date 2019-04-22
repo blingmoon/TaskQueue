@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
@@ -38,6 +39,56 @@ public class TaskQueueAOF extends TaskQueueByThreadPool {
      * 如果持久化了的话,在启动的时候需要去重写这个函数
      */
     private  void loadHistory(){
+        //加载历史文件
+        File file = new File("aof"+File.separator+this.queueAofKey+".bat");
+        LinkedList<AofTask> list = new LinkedList<>();
+        if (file.exists()){
+            ObjectInputStream ois =null;
+            try {
+                FileInputStream fn = new FileInputStream(file);
+                ois = new ObjectInputStream(fn);
+                while (fn.available()>0){
+                    //文件还有数据
+                    AofTask  aofTask = (AofTask) ois.readObject();
+                    //后面需要逆序遍历,所以采用头插法
+                    list.addFirst(aofTask);
+                }
+            } catch (IOException e) {
+                logger.debug("文件打开异常,请查看文件{}",file.getName(),e);
+            } catch (ClassNotFoundException e) {
+                logger.debug("任务class加载失败",e);
+            }finally {
+                if(ois!=null){
+                    try {
+                        ois.close();
+                    } catch (IOException e) {
+                        logger.debug("文件关闭失败",e);
+                    }
+                }
+            }
+        }
+
+        //出于效率的考虑用该是由后向上进行遍历,这个前提是操作是按顺序完成,前面是倒叙插入的,所以直接顺序遍历list就行
+        Set<String> deleteMap = new HashSet<>(64);
+        long currentTime = System.currentTimeMillis();
+        for(AofTask aofTask:list){
+            //检查aofTask是不是在delete里面,在的话说明删除
+            if(deleteMap.contains(aofTask.getTaskKey())){continue;}
+            //不在deleteMap里面
+            if(aofTask.getOp() == 1){
+                //添加操作
+                //看看这个任务是不是已经被添加了 1.add A  2.delte A 3.add A  1和3的A不一样，任务队列中应该是3.的A
+                if(!this.taskPool.containsKey(aofTask.getTaskKey())){
+                    //任务没有被添加,添加任务,这个添加动作不要去走持久化路线,因为这个任务已经被持久化了,所以调用的是父辈的注册，而不是子类的注册
+                    //获得剩余时间,当前时间是不是达到的
+                    long rest = (aofTask.getCurrentTime()+aofTask.getRestTime() >currentTime)?currentTime+aofTask.getRestTime()-aofTask.getCurrentTime():0;
+                    super.registerTask(aofTask.getTaskKey(),aofTask.getTaskBody(),rest,TimeUnit.MILLISECONDS);
+                }
+            }else {
+                //是删除操作,同时不在删除操作map里面,所以需要自己在删除操作里面添加
+                deleteMap.add(aofTask.getTaskKey());
+            }
+        }
 
     }
 
@@ -67,7 +118,7 @@ public class TaskQueueAOF extends TaskQueueByThreadPool {
         }
 
         //2.持久化的class
-        AofTask aofTask = new AofTask(1,taskId.toString(),System.currentTimeMillis(),timeUnit.toMillis(time),taskBody.getClass(),taskBody);
+        AofTask aofTask = new AofTask(1,taskId.toString(),System.currentTimeMillis(),timeUnit.toMillis(time),taskBody);
 
         return writeAof(aofTask);
     }
@@ -95,14 +146,16 @@ public class TaskQueueAOF extends TaskQueueByThreadPool {
     }
 
     private ObjectOutputStream getObjectOutStream() throws IOException {
-        if(os != null) return os;
+        if(os != null) {
+            return os;
+        }
 
         File file = new File("aof"+File.separator+this.queueAofKey+".bat");
         if(file.exists()){
             //文件存在
             FileOutputStream fo = new FileOutputStream(file,true);
             os = new ObjectOutputStream(fo);
-            long pos = 0;
+            long pos = fo.getChannel().position()-4;
             fo.getChannel().truncate(pos);
         }else {
             if(!file.createNewFile()){

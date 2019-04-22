@@ -96,7 +96,7 @@ public abstract class AbstractTaskQueue extends Thread {
         }
 
         if(logger.isDebugEnabled()){
-            logger.debug("任务{}已经被添加到延迟队列,任务将在{}s后触发,触发时间为{}",taskId,time,new Date(System.currentTimeMillis()+TimeUnit.SECONDS.toMillis(time)));
+            logger.debug("任务{}已经被添加到延迟队列,任务将在{}s后触发,触发时间为{}",taskId,timeUnit.toSeconds(time),new Date(System.currentTimeMillis()+timeUnit.toMillis(time)));
         }
 
     }

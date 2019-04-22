@@ -1,5 +1,7 @@
 package com.blingsun.taskqueue.taskpresist;
 
+import com.blingsun.taskqueue.TaskBody;
+
 import java.io.Serializable;
 import java.util.Map;
 
@@ -11,20 +13,20 @@ import java.util.Map;
  * @version 1.0 2019/4/21  by zhouliang 297977761@qq.com 创建
  */
 public class AofTask implements Serializable {
-    //op = 1 为添加,op = 2为删除
+    /**
+     * op = 1 为添加,op = 2为删除
+     */
     private Integer op;
     private String taskKey;
     private long currentTime;
     private long restTime;
-    private Class taskBodyClass;
-    private Object taskBody;
+    private TaskBody taskBody;
 
-    public AofTask(Integer op, String taskKey, long currentTime, long restTime, Class taskBodyClass, Object taskBody) {
+    public AofTask(Integer op, String taskKey, long currentTime, long restTime, TaskBody taskBody) {
         this.op = op;
         this.taskKey = taskKey;
         this.currentTime = currentTime;
         this.restTime = restTime;
-        this.taskBodyClass = taskBodyClass;
         this.taskBody = taskBody;
     }
 
@@ -65,19 +67,12 @@ public class AofTask implements Serializable {
         this.restTime = restTime;
     }
 
-    public Class getTaskBodyClass() {
-        return taskBodyClass;
-    }
 
-    public void setTaskBodyClass(Class taskBodyClass) {
-        this.taskBodyClass = taskBodyClass;
-    }
-
-    public Object getTaskBodyMap() {
+    public TaskBody getTaskBody() {
         return taskBody;
     }
 
-    public void setTaskBodyMap(Map taskBodyMap) {
-        this.taskBody = taskBodyMap;
+    public void setTaskBody(TaskBody taskBody) {
+        this.taskBody = taskBody;
     }
 }
